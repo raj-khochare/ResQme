@@ -1,0 +1,64 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+# Gradle
+.gradle/
+build/
+**/build/
+!gradle-wrapper.jar
+
+# Local configuration
+.idea/
+
+# Android Studio
+captures/
+.externalNativeBuild/
+.cxx/
+.navigation/
+
+# Keystore files
+*.jks
+*.keystore
+
+# Firebase / Google services
+google-services.json
+
+# Log files
+*.log
+
+# OS generated files
+Thumbs.db
+
+# Kotlin / Java
+out/
+
+# IntelliJ
+*.ipr
+*.iws
+
+# Android profiling
+*.hprof
+
+# APK / Bundles
+*.apk
+*.ap_
+*.aab
+
+# NDK
+obj/
+*.so
+
+# Misc
+*.orig
