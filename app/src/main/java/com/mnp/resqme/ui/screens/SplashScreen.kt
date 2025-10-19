@@ -28,6 +28,7 @@ import com.mnp.resqme.R
 import com.mnp.resqme.ui.navigation.Screen
 import com.mnp.resqme.viewmodel.AuthViewModel
 import kotlinx.coroutines.delay
+import java.nio.file.WatchEvent
 
 @Composable
 fun SplashScreen(
@@ -75,7 +76,7 @@ fun SplashScreen(
 
         Text(
             text = "Emergency Assistance at Your Fingertips",
-            fontSize = 16.sp,
+            fontSize = 15.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
