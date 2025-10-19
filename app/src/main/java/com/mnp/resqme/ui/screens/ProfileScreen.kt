@@ -2,14 +2,40 @@
 
 package com.mnp.resqme.ui.screens
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -24,8 +50,8 @@ import coil.compose.AsyncImage
 import com.mnp.resqme.data.models.User
 import com.mnp.resqme.ui.components.RescueBottomNavigation
 import com.mnp.resqme.ui.navigation.Screen
+import com.mnp.resqme.util.UiState
 import com.mnp.resqme.util.getAppSettings
-import com.mnp.resqme.util.getEmergencyInfoFromUser
 import com.mnp.resqme.viewmodel.AuthViewModel
 import com.mnp.resqme.viewmodel.UserViewModel
 
@@ -35,8 +61,11 @@ import com.mnp.resqme.viewmodel.UserViewModel
 fun ProfileScreen(
     navController: NavController,
     authViewModel: AuthViewModel = hiltViewModel(),
-    userViewModel: UserViewModel = hiltViewModel()
+    userViewModel: UserViewModel = hiltViewModel(),
+    isDarkMode: Boolean,
+    onThemeToggle: () -> Unit
 ) {
+    val userState by userViewModel.userState.collectAsState()
     Scaffold(
         topBar = {
             TopAppBar(
@@ -47,8 +76,11 @@ fun ProfileScreen(
                     )
                 },
                 actions = {
-                    IconButton(onClick = { /* Settings */ }) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                    IconButton(onClick = onThemeToggle) {
+                        Icon(
+                            imageVector = if (isDarkMode) Icons.Default.LightMode else Icons.Default.DarkMode,
+                            contentDescription = "Toggle theme"
+                        )
                     }
                 }
             )
@@ -69,34 +101,56 @@ fun ProfileScreen(
 
                 // Profile Header
                 Card(
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     Column(
                         modifier = Modifier.padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                        horizontalAlignment = Alignment.CenterHorizontally,
+
                     ) {
                         AsyncImage(
-                            model = "https://via.placeholder.com/120",
+                            model = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQIf4R5qPKHPNMyAqV-FjS_OTBB8pfUV29Phg&s",
                             contentDescription = "Profile Picture",
                             modifier = Modifier
                                 .size(80.dp)
                                 .clip(CircleShape),
-                            contentScale = ContentScale.Crop
+                            contentScale = ContentScale.Crop,
+
                         )
 
                         Spacer(modifier = Modifier.height(16.dp))
+                        // Show user data based on UiState
+                        when (userState) {
+                            is UiState.Loading -> {
+                                CircularProgressIndicator()
+                            }
 
-                        Text(
-                            text = "John Doe", // Replace with actual user data
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                            is UiState.Success -> {
 
-                        Text(
-                            text = "john.doe@example.com", // Replace with actual email
-                            fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                                val user = (userState as UiState.Success<User>).data
+                                Text(
+                                    text = user.name, // Replace with actual user data
+                                    fontSize = 24.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+
+                                Text(
+                                    text = user.email, // Replace with actual email
+                                    fontSize = 14.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            is UiState.Error -> {
+                                Text(
+                                    text = (userState as UiState.Error).message,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+
+                            else -> {}
+                        }
+
 
                         Spacer(modifier = Modifier.height(16.dp))
 
@@ -111,9 +165,10 @@ fun ProfileScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Edit Profile")
                         }
+                        }
                     }
                 }
-            }
+
             item {
                 Text(
                     text = "Emergency Information",
@@ -139,7 +194,7 @@ fun ProfileScreen(
                 )
             }
 
-            items(getAppSettings()) { setting ->
+            items(getAppSettings(navController)) { setting ->
                 ProfileSettingCard(
                     title = setting.title,
                     description = setting.description,
@@ -204,53 +259,53 @@ fun ProfileScreen(
     }
 }
 
-@Composable
-fun ProfileInfoCard(
-    title: String,
-    value: String,
-    icon: ImageVector,
-    onClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        onClick = onClick
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = title,
-                modifier = Modifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = value.ifEmpty { "Not set" },
-                    fontSize = 16.sp,
-                    color = if (value.isEmpty()) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    }
-                )
-            }
-            Icon(
-                imageVector = Icons.Default.ChevronRight,
-                contentDescription = "Edit",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
+//@Composable
+//fun ProfileInfoCard(
+//    title: String,
+//    value: String,
+//    icon: ImageVector,
+//    onClick: () -> Unit
+//) {
+//    Card(
+//        modifier = Modifier.fillMaxWidth(),
+//        onClick = onClick
+//    ) {
+//        Row(
+//            modifier = Modifier.padding(16.dp),
+//            verticalAlignment = Alignment.CenterVertically
+//        ) {
+//            Icon(
+//                imageVector = icon,
+//                contentDescription = title,
+//                modifier = Modifier.size(24.dp),
+//                tint = MaterialTheme.colorScheme.primary
+//            )
+//            Spacer(modifier = Modifier.width(16.dp))
+//            Column(modifier = Modifier.weight(1f)) {
+//                Text(
+//                    text = title,
+//                    fontWeight = FontWeight.Medium,
+//                    fontSize = 14.sp,
+//                    color = MaterialTheme.colorScheme.onSurfaceVariant
+//                )
+//                Text(
+//                    text = value.ifEmpty { "Not set" },
+//                    fontSize = 16.sp,
+//                    color = if (value.isEmpty()) {
+//                        MaterialTheme.colorScheme.error
+//                    } else {
+//                        MaterialTheme.colorScheme.onSurface
+//                    }
+//                )
+//            }
+//            Icon(
+//                imageVector = Icons.Default.ChevronRight,
+//                contentDescription = "Edit",
+//                tint = MaterialTheme.colorScheme.onSurfaceVariant
+//            )
+//        }
+//    }
+//}
 
 @Composable
 fun ProfileSettingCard(

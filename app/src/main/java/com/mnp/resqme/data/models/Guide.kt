@@ -1,7 +1,5 @@
 package com.mnp.resqme.data.models
 
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
 import androidx.compose.ui.graphics.vector.ImageVector
 
 // Guide related data classes
@@ -35,9 +33,9 @@ data class AppSetting(
 )
 
 // Emergency related data classes
-data class EmergencyContact(
+data class EmergencyServices(
     val name: String,
-    val number: String,
+    val phoneNumber: String,
     val description: String,
     val icon: ImageVector,
     val isUrgent: Boolean

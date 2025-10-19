@@ -1,8 +1,6 @@
 @file:OptIn(ExperimentalMaterial3Api::class)
 
 package com.mnp.resqme.ui.screens
-
-
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow

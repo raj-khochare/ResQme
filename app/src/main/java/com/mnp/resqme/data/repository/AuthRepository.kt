@@ -10,7 +10,6 @@ import javax.inject.Singleton
 class AuthRepository @Inject constructor(
     private val firebaseService: FirebaseService
 ) {
-
     suspend fun loginUser(email: String, password: String): Result<FirebaseUser> {
         return firebaseService.signInWithEmail(email, password)
     }

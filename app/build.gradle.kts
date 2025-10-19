@@ -11,7 +11,7 @@ plugins {
 
 android {
     namespace = "com.mnp.resqme"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.mnp.resqme"
@@ -52,7 +52,13 @@ android {
             )
         }
     }
-
+    applicationVariants.all {
+        outputs.all {
+            (this as? com.android.build.gradle.internal.api.BaseVariantOutputImpl)?.let { output ->
+                output.outputFileName = "ResQMe-${name}-${versionName}.apk"
+            }
+        }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
@@ -82,6 +88,8 @@ dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.activity:activity-compose:1.8.2")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.4")
+    implementation("com.google.android.gms:play-services-location:21.3.0")
 
     // Compose BOM
     implementation(platform("androidx.compose:compose-bom:2023.10.01"))
@@ -126,4 +134,6 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+
+    implementation("androidx.datastore:datastore-preferences:1.0.0")
 }

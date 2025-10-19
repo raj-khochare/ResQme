@@ -10,5 +10,6 @@ data class User(
     val medicalConditions: String = "",
     val allergies: String = "",
     val bloodType: String = "",
+    val emergencyContactIds: List<String> = emptyList(),
     val createdAt: Long = System.currentTimeMillis()
 )
