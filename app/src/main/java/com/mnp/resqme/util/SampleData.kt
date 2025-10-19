@@ -72,7 +72,7 @@ fun getQuickActions() = listOf(
 )
 
 fun getEmergencyServices() = listOf(
-    EmergencyServices("sample Emergency", "9321955817", "Police, Fire, Medical Emergency", Icons.Default.Emergency, true),
+    EmergencyServices("sample Emergency No.", "111-111-1111", "Police, Fire, Medical Emergency", Icons.Default.Emergency, true),
     EmergencyServices("Police", "100", "Law enforcement emergency", Icons.Default.LocalPolice, true),
     EmergencyServices("Fire Department", "101", "Fire emergency services", Icons.Default.LocalFireDepartment, true),
     EmergencyServices("Medical Emergency", "102", "Ambulance and medical services", Icons.Default.LocalHospital, true),
