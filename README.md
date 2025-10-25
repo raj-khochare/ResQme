@@ -40,9 +40,7 @@ Rescue Guide is an Android application that provides quick access to emergency s
 
 ## Screenshots
 
-| Home Screen | Emergency | Guides | Profile |
-|-------------|-----------|--------|---------|
-| Splash screen with app logo | SOS button and emergency services | Categorized rescue guides | User profile and settings |
+
 
 ---
 
@@ -54,7 +52,7 @@ Download the APK from the releases page and install on your Android device.
 
 ### For Developers
 ```bash
-git clone https://github.com/yourusername/rescue-guide.git
+git clone https://github.com/raj-khochare/rescue-guide.git
 cd rescue-guide
 ```
 

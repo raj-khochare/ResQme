@@ -4,13 +4,17 @@ package com.mnp.resqme.ui.screens
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.location.LocationManager
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.provider.Settings
 import android.telephony.SmsManager
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,15 +33,18 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -50,15 +57,23 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
+import com.google.android.gms.common.api.ResolvableApiException
+import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.LocationSettingsRequest
 import com.google.android.gms.location.Priority
+import com.google.android.gms.location.SettingsClient
+import com.google.firebase.auth.FirebaseAuth
+import com.mnp.resqme.data.models.EmergencyContact
 import com.mnp.resqme.ui.components.RescueBottomNavigation
+import com.mnp.resqme.util.Constants
 import com.mnp.resqme.util.getEmergencyActions
 import com.mnp.resqme.util.getEmergencyServices
 import com.mnp.resqme.util.makePhoneCall
@@ -74,7 +89,12 @@ fun EmergencyScreen(
 ) {
     val context = LocalContext.current
     val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+    val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
     val contacts by contactViewModel.contacts.collectAsStateWithLifecycle()
+
+    var isSendingSOS by remember { mutableStateOf(false) }
+    var showLocationDialog by remember { mutableStateOf(false) }
+
     var hasLocationPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
@@ -103,6 +123,7 @@ fun EmergencyScreen(
     }
 
     var pendingPhoneNumber by remember { mutableStateOf<String?>(null) }
+    var shouldTriggerSOSAfterLocation by remember { mutableStateOf(false) }
 
     // Permission launcher for SOS (location + SMS)
     val sosPermissionLauncher = rememberLauncherForActivityResult(
@@ -110,7 +131,100 @@ fun EmergencyScreen(
     ) { permissions ->
         hasLocationPermission = permissions[Manifest.permission.ACCESS_FINE_LOCATION] ?: false
         hasSmsPermission = permissions[Manifest.permission.SEND_SMS] ?: false
+
+        // If permissions granted, trigger SOS again
+        if (hasLocationPermission && hasSmsPermission) {
+            triggerSOS(
+                context = context,
+                vibrator = vibrator,
+                contacts = contacts,
+                onSendingStateChange = { isSendingSOS = it }
+            )
+        } else {
+            Toast.makeText(
+                context,
+                "Location and SMS permissions are required for SOS",
+                Toast.LENGTH_LONG
+            ).show()
+        }
     }
+
+    fun isLocationEnabled(): Boolean {
+        return locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
+                locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+    }
+    fun handleSOSClick() {
+        // Check if contacts exist first
+        if (contacts.isEmpty()) {
+            Toast.makeText(
+                context,
+                "Please add emergency contacts first",
+                Toast.LENGTH_LONG
+            ).show()
+            navController.navigate("emergency_contacts")
+            return
+        }
+
+        // Check if location is enabled
+        if (!isLocationEnabled()) {
+            showLocationDialog = true
+            return
+        }
+
+        // Check permissions
+        if (!hasLocationPermission || !hasSmsPermission) {
+            sosPermissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.SEND_SMS
+                )
+            )
+        } else {
+            triggerSOS(
+                context = context,
+                vibrator = vibrator,
+                contacts = contacts,
+                onSendingStateChange = { isSendingSOS = it }
+            )
+        }
+    }
+
+    // Location settings launcher - enables location with one tap
+    val locationSettingsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            // Location enabled successfully, trigger SOS
+            Toast.makeText(context, "Location enabled", Toast.LENGTH_SHORT).show()
+            if (shouldTriggerSOSAfterLocation) {
+                shouldTriggerSOSAfterLocation = false
+                handleSOSClick()
+            }
+        } else {
+            // User declined, but still send SOS without precise location
+            Toast.makeText(context, "Sending SOS without precise location", Toast.LENGTH_SHORT).show()
+            if (shouldTriggerSOSAfterLocation) {
+                shouldTriggerSOSAfterLocation = false
+                if (!hasLocationPermission || !hasSmsPermission) {
+                    sosPermissionLauncher.launch(
+                        arrayOf(
+                            Manifest.permission.ACCESS_FINE_LOCATION,
+                            Manifest.permission.SEND_SMS
+                        )
+                    )
+                } else {
+                    triggerSOS(
+                        context = context,
+                        vibrator = vibrator,
+                        contacts = contacts,
+                        onSendingStateChange = { isSendingSOS = it }
+                    )
+                }
+            }
+        }
+    }
+
+
 
     // Permission launcher for phone calls
     val callPermissionLauncher = rememberLauncherForActivityResult(
@@ -134,76 +248,47 @@ fun EmergencyScreen(
             callPermissionLauncher.launch(Manifest.permission.CALL_PHONE)
         }
     }
-    fun sendSOSMessages(location: String) {
-        if (!hasSmsPermission) {
-            Toast.makeText(context, "SMS permission required", Toast.LENGTH_SHORT).show()
-            return
+
+    fun requestLocationEnable() {
+        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 10000)
+            .build()
+
+        val builder = LocationSettingsRequest.Builder()
+            .addLocationRequest(locationRequest)
+
+        val client: SettingsClient = LocationServices.getSettingsClient(context)
+        val task = client.checkLocationSettings(builder.build())
+
+        task.addOnSuccessListener {
+            // Location is already enabled, proceed with SOS
+            handleSOSClick()
         }
 
-        if (contacts.isEmpty()) {
-            Toast.makeText(context, "No emergency contacts added", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        try {
-            val smsManager = context.getSystemService(SmsManager::class.java)
-            val message = "EMERGENCY! I need help!\n\nMy location: $location\n\n- Sent from ResQme"
-
-            contacts.forEach { contact ->
-                smsManager.sendTextMessage(
-                    contact.phoneNumber,
-                    null,
-                    message,
-                    null,
-                    null
-                )
+        task.addOnFailureListener { exception ->
+            if (exception is ResolvableApiException) {
+                // Location is not enabled, but we can show a dialog to enable it
+                try {
+                    shouldTriggerSOSAfterLocation = true
+                    val intentSenderRequest = IntentSenderRequest.Builder(exception.resolution).build()
+                    locationSettingsLauncher.launch(intentSenderRequest)
+                } catch (sendEx: Exception) {
+                    // Failed to show dialog, fall back to sending without location
+                    Toast.makeText(
+                        context,
+                        "Cannot enable location. Sending SOS anyway.",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    handleSOSClick()
+                }
+            } else {
+                // Unknown error, proceed anyway
+                handleSOSClick()
             }
-
-            Toast.makeText(
-                context,
-                "SOS sent to ${contacts.size} contact(s)",
-                Toast.LENGTH_LONG
-            ).show()
-        } catch (e: Exception) {
-            Toast.makeText(context, "Failed to send SMS: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 
-    fun triggerSOS() {
-        // Vibrate
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            vibrator.vibrate(
-                VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE)
-            )
-        } else {
-            @Suppress("DEPRECATION")
-            vibrator.vibrate(500)
-        }
 
-        // Get location and send SMS
-        if (hasLocationPermission && hasSmsPermission) {
-            val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
-            fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
-                .addOnSuccessListener { location ->
-                    val locationStr = if (location != null) {
-                        "https://maps.google.com/?q=${location.latitude},${location.longitude}"
-                    } else {
-                        "Location unavailable"
-                    }
-                    sendSOSMessages(locationStr)
-                }
-                .addOnFailureListener {
-                    sendSOSMessages("Location unavailable")
-                }
-        } else {
-            sosPermissionLauncher.launch(
-                arrayOf(
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.SEND_SMS
-                )
-            )
-        }
-    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -230,57 +315,80 @@ fun EmergencyScreen(
             item {
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // sos button
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
+                // SOS Button
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-
                     Button(
-
-                        onClick = { /* Trigger SOS action */
-                            triggerSOS()
-                            Toast.makeText(context, "SOS Triggered!", Toast.LENGTH_SHORT).show()
-                            // TODO: Firestore / SMS / Call API action here
+                        onClick = {
+                            // Smart location request - enables with one tap
+                            requestLocationEnable()
                         },
+                        enabled = !isSendingSOS,
                         shape = CircleShape,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.Red
+                            containerColor = Color.Red,
+                            disabledContainerColor = Color.Red.copy(alpha = 0.6f)
                         ),
                         modifier = Modifier
-                            .size(150.dp) // big circular button
-                            .shadow(8.dp, CircleShape) // elevation shadow
+                            .size(150.dp)
+                            .shadow(8.dp, CircleShape)
                     ) {
-                        Text(
-                            text = "SOS",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 30.sp
-                        )
+                        if (isSendingSOS) {
+                            CircularProgressIndicator(
+                                color = Color.White,
+                                modifier = Modifier.size(30.dp)
+                            )
+                        } else {
+                            Text(
+                                text = "SOS",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 30.sp
+                            )
+                        }
                     }
-//                        Row(
-//                            verticalAlignment = Alignment.CenterVertically
-//                        ) {
-//                            Icon(
-//                                imageVector = Icons.Default.Warning,
-//                                contentDescription = "Warning",
-//                                tint = MaterialTheme.colorScheme.error
-//                            )
-//                            Spacer(modifier = Modifier.width(8.dp))
-//                            Text(
-//                                text = "Emergency Contacts",
-//                                fontWeight = FontWeight.Bold,
-//                                color = MaterialTheme.colorScheme.error
-//                            )
-//                        }
-//                        Spacer(modifier = Modifier.height(8.dp))
-//                        Text(
-//                            text = "In a life-threatening emergency, call immediately:",
-//                            color = MaterialTheme.colorScheme.onErrorContainer
-//                        )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Info text below SOS button
+                    if (contacts.isEmpty()) {
+                        Text(
+                            text = "No emergency contacts added",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error,
+                            textAlign = TextAlign.Center,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        TextButton(
+                            onClick = { navController.navigate("emergency_contacts") }
+                        ) {
+                            Text("Add Contacts Now")
+                        }
+                    } else {
+                        Text(
+                            text = "Ready to send alert to ${contacts.size} contact(s)",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+
+                        // Show primary contact if exists
+                        contacts.firstOrNull { it.isPrimary }?.let { primary ->
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Primary: ${primary.name}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                textAlign = TextAlign.Center,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
                 }
             }
-
 
             item {
                 Text(
@@ -318,7 +426,243 @@ fun EmergencyScreen(
                     onClick = action.onClick
                 )
             }
+
+            item {
+                Spacer(modifier = Modifier.height(16.dp))
+            }
         }
+    }
+
+    // Location Settings Dialog (fallback)
+    if (showLocationDialog) {
+        AlertDialog(
+            onDismissRequest = { showLocationDialog = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Phone,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(48.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Enable Location?",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "For accurate emergency response, enable location services.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "In urgent situations, you can still send SOS without location.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showLocationDialog = false
+                        val intent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+                        context.startActivity(intent)
+                    }
+                ) {
+                    Text("Enable Location")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showLocationDialog = false
+                        // Allow sending without location in emergency
+                        Toast.makeText(
+                            context,
+                            "Sending SOS without location",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        if (!hasLocationPermission || !hasSmsPermission) {
+                            sosPermissionLauncher.launch(
+                                arrayOf(
+                                    Manifest.permission.ACCESS_FINE_LOCATION,
+                                    Manifest.permission.SEND_SMS
+                                )
+                            )
+                        } else {
+                            triggerSOS(
+                                context = context,
+                                vibrator = vibrator,
+                                contacts = contacts,
+                                onSendingStateChange = { isSendingSOS = it }
+                            )
+                        }
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Send Anyway")
+                }
+            }
+        )
+    }
+}
+
+private fun triggerSOS(
+    context: Context,
+    vibrator: Vibrator,
+    contacts: List<EmergencyContact>,
+    onSendingStateChange: (Boolean) -> Unit
+) {
+    // Vibrate
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        vibrator.vibrate(
+            VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE)
+        )
+    } else {
+        @Suppress("DEPRECATION")
+        vibrator.vibrate(500)
+    }
+
+    onSendingStateChange(true)
+
+    // Check permissions at runtime
+    val hasLocationPermission = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.ACCESS_FINE_LOCATION
+    ) == PackageManager.PERMISSION_GRANTED
+
+    val hasSmsPermission = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.SEND_SMS
+    ) == PackageManager.PERMISSION_GRANTED
+
+    // Get location and send SMS
+    if (hasLocationPermission && hasSmsPermission) {
+        val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
+
+        try {
+            fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
+                .addOnSuccessListener { location ->
+                    val locationStr = if (location != null) {
+                        "https://maps.google.com/?q=${location.latitude},${location.longitude}"
+                    } else {
+                        "Location unavailable"
+                    }
+                    sendSOSMessages(context, contacts, locationStr)
+                    onSendingStateChange(false)
+                }
+                .addOnFailureListener { e ->
+                    Toast.makeText(
+                        context,
+                        "Location error: ${e.message}",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    sendSOSMessages(context, contacts, "Location unavailable")
+                    onSendingStateChange(false)
+                }
+        } catch (e: SecurityException) {
+            Toast.makeText(
+                context,
+                "Location permission error",
+                Toast.LENGTH_SHORT
+            ).show()
+            sendSOSMessages(context, contacts, "Location unavailable")
+            onSendingStateChange(false)
+        }
+    } else {
+        onSendingStateChange(false)
+        Toast.makeText(
+            context,
+            "Location and SMS permissions required",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+}
+
+private fun sendSOSMessages(
+    context: Context,
+    contacts: List<EmergencyContact>,
+    location: String
+) {
+    // Define your default emergency number here
+    val DEFAULT_EMERGENCY_NUMBER = Constants.SAMPLE_DEFAULT_EMERGENCY_NUMBER // ← Change this to your default number
+//    val userName = FirebaseAuth.getInstance().currentUser?.displayName ?: "Unknown User"
+
+    try {
+        val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            context.getSystemService(SmsManager::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            SmsManager.getDefault()
+        }
+
+//        val message = "EMERGENCY!!!\n\n I am $userName I need help!\n\nMy location: $location\n\n- Sent from ResQme"
+        val message = "EMERGENCY!!! I need help!\n\nMy location: $location\n\n- Sent from ResQme"
+
+        var successCount = 0
+        var failCount = 0
+
+        // Send to default emergency number FIRST
+        try {
+            smsManager.sendTextMessage(
+                DEFAULT_EMERGENCY_NUMBER,
+                null,
+                message,
+                null,
+                null
+            )
+            successCount++
+            android.util.Log.d("EmergencyScreen", "SMS sent to default emergency number: $DEFAULT_EMERGENCY_NUMBER")
+        } catch (e: Exception) {
+            failCount++
+            android.util.Log.e("EmergencyScreen", "Failed to send SMS to default emergency number", e)
+        }
+
+        // Then send to all user's personal contacts
+        contacts.forEach { contact ->
+            try {
+                smsManager.sendTextMessage(
+                    contact.phoneNumber,
+                    null,
+                    message,
+                    null,
+                    null
+                )
+                successCount++
+                android.util.Log.d("EmergencyScreen", "SMS sent to ${contact.name} (${contact.phoneNumber})")
+            } catch (e: Exception) {
+                failCount++
+                android.util.Log.e("EmergencyScreen", "Failed to send SMS to ${contact.name}", e)
+            }
+        }
+
+        if (successCount > 0) {
+            val totalRecipients = if (contacts.isEmpty()) 1 else contacts.size + 1
+            Toast.makeText(
+                context,
+                "✓ SOS sent to $successCount of $totalRecipients recipient(s)${if (failCount > 0) " ($failCount failed)" else ""}",
+                Toast.LENGTH_LONG
+            ).show()
+        } else {
+            Toast.makeText(
+                context,
+                "Failed to send SOS messages",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    } catch (e: Exception) {
+        android.util.Log.e("EmergencyScreen", "Error sending SMS", e)
+        Toast.makeText(
+            context,
+            "Error sending SMS: ${e.message}",
+            Toast.LENGTH_SHORT
+        ).show()
     }
 }
 
@@ -438,4 +782,3 @@ fun EmergencyActionCard(
         }
     }
 }
-

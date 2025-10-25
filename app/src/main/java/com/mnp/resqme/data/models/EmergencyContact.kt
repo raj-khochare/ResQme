@@ -1,6 +1,9 @@
 package com.mnp.resqme.data.models
 
+import com.google.firebase.firestore.Exclude
+
 data class EmergencyContact(
+    @get:Exclude
     val id: String = "",
     val userId: String = "",
     val name: String = "",

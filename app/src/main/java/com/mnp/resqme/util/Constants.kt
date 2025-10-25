@@ -5,6 +5,7 @@ object Constants {
     // Firestore Collections
     const val USERS_COLLECTION = "users"
     const val EMERGENCY_CONTACTS_COLLECTION = "emergency_contacts"
+    const val SAMPLE_DEFAULT_EMERGENCY_NUMBER = "+919867013817"
 //  const val GUIDES_COLLECTION = "guides"
 
 //    // SharedPreferences
